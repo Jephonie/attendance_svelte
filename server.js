@@ -8,15 +8,16 @@ const canvas = require("canvas");
 const { Canvas, Image, ImageData } = canvas;
 faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 
+// Folders for storing images and descriptors
+const FACE_DIR = path.resolve("./face");
+const DESC_DIR = path.resolve("./descriptors");
+
 const app = express();
 const PORT = 3000;
 
 app.use(cors());
 app.use(express.json({ limit: "20mb" }));
-
-// Folders for storing images and descriptors
-const FACE_DIR = path.resolve("./face");
-const DESC_DIR = path.resolve("./descriptors");
+app.use("/face", express.static(FACE_DIR));
 
 // Make sure directories exist
 if (!fs.existsSync(FACE_DIR)) fs.mkdirSync(FACE_DIR, { recursive: true });
@@ -187,7 +188,7 @@ app.post("/login-recognize", async (req, res) => {
 
     const img = await imageFromBase64(image);
     const detection = await faceapi
-      .detectSingleFace(img, tinyOptions)
+      .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
       .withFaceDescriptor();
 
@@ -196,19 +197,14 @@ app.post("/login-recognize", async (req, res) => {
     }
 
     const queryDesc = detection.descriptor;
-
     const files = fs.readdirSync(DESC_DIR).filter(f => f.endsWith(".json"));
     let bestMatch = null;
     let bestDist = 1.0;
 
     for (let file of files) {
       const data = JSON.parse(fs.readFileSync(path.join(DESC_DIR, file)));
-
       for (let storedDesc of data.descriptors) {
-        if (!storedDesc || storedDesc.length !== queryDesc.length) {
-          console.warn(`Skipping invalid descriptor in ${file}`);
-          continue;
-        }
+        if (!storedDesc || storedDesc.length !== queryDesc.length) continue;
         const dist = faceapi.euclideanDistance(queryDesc, storedDesc);
         if (dist < bestDist) {
           bestDist = dist;
@@ -218,8 +214,16 @@ app.post("/login-recognize", async (req, res) => {
     }
 
     if (bestMatch && bestDist < 0.6) {
+      // Find all face images for this student
+      const faceFiles = fs.readdirSync(FACE_DIR)
+        .filter(f => f.includes(bestMatch.studentId));
+
+      const imagePaths = faceFiles.map(f => `/face/${f}`);
+
       return res.json({
         message: `✅ Welcome back, ${bestMatch.firstName} ${bestMatch.surname}`,
+        imagePaths, // send array of image URLs
+        studentId: bestMatch.studentId // add this
       });
     }
 
