@@ -1,8 +1,2 @@
 # Dependencies
 node_modules/
-
-# IDE/Build Artifacts
-.vs/
-
-# Large files/data that shouldn't be version-controlled
-models/
